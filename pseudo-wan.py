@@ -38,30 +38,31 @@ class Router(object):
         current_dir = os.getcwd()
         c = CmdBuffer(' ')
         c << "docker run --privileged=true"
-        c << "-v {0}/{1}:/tmp -p 8080:8080".format(current_dir, self.name)
+        c << "-v {0}/{1}:/tmp".format(current_dir, self.name)
         c << "--name {0} -h {1} -itd {1}".format(self.name, self.image)
         c << "bash"
 
         print ("### Create connertainer {0} ###".format(self.name))
         self.id = local(str(c), capture=True)
         self.is_running = True
-        self.start_docker_exec(self.name)
         return 0
 
     def start_docker_exec(self, host):
+        local("docker exec {0} cp /tmp/OpenFlow.ini /root/simpleRouter/rest-client".format(host),
+              capture=True)
         local("docker exec {0} mkdir /usr/local/etc/lagopus".format(host),
               capture=True)
         local("docker exec {0} cp /tmp/lagopus.conf /usr/local/etc/lagopus".format(host), capture=True)
         local("docker exec {0} cp /tmp/start_lagopus.sh /root".format(host),
               capture=True)
-#        local("docker exec {0} bash -c /root/start_lagopus.sh".format(host),
-#              capture=True)
-        local("docker exec {0} ryu-manager /root/simpleRouter/ryu-app/openflowRouter.py --log-config-file /root/simpleRouter/ryu-app/logging.conf".format(host), capture=True)
+        local("docker exec {0} /root/start_lagopus.sh".format(host),
+              capture=True)
+        local("docker exec -itd {0} ryu-manager /root/simpleRouter/ryu-app/openflowRouter.py --log-config-file /root/simpleRouter/ryu-app/logging.conf".format(host), capture=True)
 
-    def create_wan_port(self, openflow_if, offload_if, bgp_if, peer_addr):
-        self.pipework('br_openflow_if', openflow_if, self.name)
-        self.pipework('br_offload_if',offload_if, self.name)
-        self.pipework('br_bgp_if',bgp_if, self.name, peer_addr)
+    def create_wan_port(self, ifname_openflow, ifname_transit, ifname_bgp, peer_addr, mac_addr):
+        self.pipework('br_openflow', ifname_openflow, self.name)
+        self.pipework('br_transit', ifname_transit, self.name)
+        self.pipework('br_transit', ifname_bgp, self.name, peer_addr, mac_addr)
 
     def create_lan_port(self, if_name, br_name, tenant_ip):
         self.pipework(br_name, if_name, self.name)
@@ -70,7 +71,7 @@ class Router(object):
         local("docker rm -f " + self.name, capture=False)
         self.is_running = False
 
-    def pipework(self, bridge, if_name, host, peer_addr=""):
+    def pipework(self, bridge, if_name, host, peer_addr=None, mac_addr=None):
         if not self.is_running:
             print ('*** call run() before pipeworking')
             return
@@ -78,11 +79,10 @@ class Router(object):
         c << "pipework {0}".format(bridge)
 
         if if_name != "":
-            if peer_addr == "":
+            if peer_addr == None:
                 c << "-i {0} {1} 0.0.0.0/0".format(if_name, host)
             else:
-                c << "-i {0} {1} {2}".format(if_name, host, peer_addr)
-                c << "00:00:00:00:01:01"
+                c << "-i {0} {1} {2} {3}".format(if_name, host, peer_addr, mac_addr)
             print ("### add_link_for_tenant {0} ###".format(if_name))
             return local(str(c), capture=True)
 
@@ -216,18 +216,17 @@ def create_bgp_tenant(wan_prefix_init, num):
     pass
 
 def deploy_host():
-    create_host_tenant('130.1.0.0/24', '140.1.1.0/24', 3)
+    create_host_tenant('130.1.0.0/24', '140.1.1.0/24', 2)
 
 
 def deploy_simpleRouter():
     routername = Router('BGP')
     routername.run()
-
-    routername.create_wan_port('eth101', 'eth102', 'eth103', '192.168.0.2/30')
     routername.create_lan_port('eth1', 'br001-0', '130.1.0.1/24')
     routername.create_lan_port('eth2', 'br002-0', '130.2.0.1/24')
-    routername.create_lan_port('eth3', 'br003-0', '130.3.0.1/24')
-
+    routername.create_wan_port('eth3', 'eth4', 'eth5', '192.168.0.1/30', "00:00:00:00:01:01")
+    routername.start_docker_exec('BGP')
+    local("brctl addif br_openflow eth1", capture=True)
 
 if __name__ == '__main__':
     parser = OptionParser(usage="usage: %prog [install|start|stop|")
@@ -247,4 +246,3 @@ if __name__ == '__main__':
         for bridge in get_bridges():
             local("ip link set down dev {0}".format(bridge), capture=True)
             local("ip link delete {0} type bridge".format(bridge), capture=True)
-
