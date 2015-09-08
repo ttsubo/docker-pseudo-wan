@@ -9,9 +9,9 @@ Ubuntu Server版を推奨とします.
 
 	$ cat /etc/lsb-release 
 	DISTRIB_ID=Ubuntu
-	DISTRIB_RELEASE=15.04
+	DISTRIB_RELEASE=14.04
 	DISTRIB_CODENAME=trusty
-	DISTRIB_DESCRIPTION="Ubuntu 15.04 LTS"
+	DISTRIB_DESCRIPTION="Ubuntu 14.04.3 LTS"
 
 Dockerコンテナで構成されるWANネットワークと外部環境と通信するために、eth1のインタフェースを前提とします.
 
@@ -23,6 +23,22 @@ Dockerコンテナで構成されるWANネットワークと外部環境と通�
 
 Installation
 ==========
+### 事前準備
+OpenvSwitchをインストールして、"openvswitch"カーネルモジュールを組み込みます.
+OpenvSwitch自体は起動する必要がないため、停止しておきます.
+
+	$ sudo apt-get install openvswitch-switch
+	$ sudo service openvswitch-switch stop
+	openvswitch-switch stop/waiting
+
+"openvswitch"カーネルモジュールが組み込まれたことを確認します.
+
+	$ lsmod|grep open
+	openvswitch            65844  0 
+	gre                    13796  1 openvswitch
+	vxlan                  37629  1 openvswitch
+	libcrc32c              12644  1 openvswitch
+
 ### リポジトリ情報
 Githubよりリポジトリ情報を取得します.
 
@@ -34,6 +50,7 @@ Githubよりリポジトリ情報を取得します.
 	$ cd docker-pseudo-wan
 	$ sudo apt-get install python-dev
 	$ sudo apt-get install python-paramiko
+	$ sudo apt-get install python-pip
 	$ sudo pip install -r requirements.txt
 	$ sudo python ./pseudo-wan.py install
 	$ sudo gpasswd -a `whoami` docker
@@ -58,9 +75,9 @@ Githubよりリポジトリ情報を取得します.
 Dockerイメージを確認します.
 
 	$ docker images
-	REPOSITORY            TAG                 IMAGE ID            CREATED             VIRTUAL SIZE
-	ttsubo/ryubgp-w-ovs   latest              f7ebbe890738        22 hours ago        965.9 MB
-	ubuntu                14.04.2             63e3c10217b8        4 weeks ago         188.4 MB
+	REPOSITORY                 TAG                 IMAGE ID            CREATED             VIRTUAL SIZE
+	ttsubo/ryubgp-w-ovs2_3_1   latest              acc83513331e        4 hours ago         640.9 MB
+	ubuntu                     14.04.2             63e3c10217b8        4 weeks ago         188.4 MB
 
 
 Quick Start
@@ -76,35 +93,35 @@ WANネットワークの疑似環境を構築します.
 Dockerコンテナ実行状況を確認します.
 
 	$ docker ps
+	CONTAINER ID        IMAGE                             COMMAND             CREATED             STATUS              PORTS               NAMES
 
 	(...snip)
-	272630f0b414        ubuntu              "bash"              58 minutes ago      Up 58 minutes                           host_009_2009       
-	e439e48e39cf        ubuntu              "bash"              58 minutes ago      Up 58 minutes                           host_008_2008       
-	84fbee041583        ubuntu              "bash"              58 minutes ago      Up 58 minutes                           host_007_2007       
-	0068e23ae89d        ubuntu              "bash"              58 minutes ago      Up 58 minutes                           host_006_2006       
-	d6316ea0f2df        ubuntu              "bash"              58 minutes ago      Up 58 minutes                           host_005_2005       
-	5e94d6cd8f63        ubuntu              "bash"              58 minutes ago      Up 58 minutes                           host_004_2004       
-	45ea01479165        ubuntu              "bash"              58 minutes ago      Up 58 minutes                           host_003_2003       
-	7bd4ab0f230b        ubuntu              "bash"              58 minutes ago      Up 58 minutes                           host_002_2002       
-	7e6fd01b6203        ubuntu              "bash"              58 minutes ago      Up 58 minutes                           host_001_2001 
+	53c8ecb408a2        ubuntu:14.04.2                    "bash"              20 seconds ago      Up 19 seconds                           host_002            
+	d75712aa7402        ubuntu:14.04.2                    "bash"              21 seconds ago      Up 20 seconds                           host_001            
+	2e7daa9472ab        ttsubo/ryubgp-w-ovs2_3_1:latest   "bash"              22 seconds ago      Up 21 seconds                           BGP 
+
 
 Linuxブリッジ動作状況を確認します.
 
 	$ brctl show
 
 	(...snip)
-	br3610-1		8000.0643928767a7	no		veth0pl17505
-	br3610-2		8000.1a12463629fa	no		veth1pl17505
-	br3610-3		8000.5a681fb7fd91	no		veth2pl17505
-	br3610-4		8000.fe330662b497	no		veth3pl17505
-	br3610-5		8000.6eac4152508c	no		veth4pl17505
-	br3611-1		8000.3e6aea49544f	no		veth0pl18407
-	br3611-2		8000.d60abd87f45d	no		veth1pl18407
-	br3611-3		8000.6e42594e14b0	no		veth2pl18407
-	br3611-4		8000.82766c58e360	no		veth3pl18407
-	br3611-5		8000.86e3b1fa7686	no		veth4pl18407
-	vnic1		8000.000c2974144a	no		eth2
-	vnic2		8000.000c29741454	no		eth3
+	br001-0		8000.26d81e0f1150	no		veth0pl15223
+								veth2pl14469
+	br001-1		8000.de5df3684915	no		veth1pl15223
+	br001-2		8000.26ff6e6d48f4	no		veth2pl15223
+	br001-3		8000.c253624e0316	no		veth3pl15223
+	br001-4		8000.5e7349365cad	no		veth4pl15223
+	br001-5		8000.166bc3d3012f	no		veth5pl15223
+	br002-0		8000.065a7b8e9d06	no		veth0pl15969
+								veth3pl14469
+	br002-1		8000.163fb46b5c34	no		veth1pl15969
+	br002-2		8000.72ee38fb374f	no		veth2pl15969
+	br002-3		8000.3637a58a2a3e	no		veth3pl15969
+	br002-4		8000.da626c03f655	no		veth4pl15969
+	br002-5		8000.46f6b58c3304	no		veth5pl15969
+	br_openflow		8000.000c29fc4f25	no		eth1
+								veth1pl14469
 
 
 ### Dockerコンテナへアクセス

@@ -2,3 +2,4 @@ Fabric==1.10.2
 ecdsa==0.13
 netaddr==0.7.15
 pycrypto==2.6.1
+oslo.config>=1.6.0
