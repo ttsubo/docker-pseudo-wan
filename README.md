@@ -1,13 +1,19 @@
 What's docker-pseudo-wan
 ==========
-Dockerコンテナを活用して、WANネットワークの疑似環境を構築するものです. 
+Dockerコンテナを活用して、WANネットワークの疑似環境を構築するものです.
+
+	                   (static) +------------+         mp-BGP         +----------+	
+	host_001 container -------+ |   RyuBGP   | +--------------------+ |   BGP    | +---- ...
+	host_002 container -------+ |  container |                        |  Router  |
+	     :                      +------------+                        +----------+
+	              < AS65000 >        192.168.0.2                    192.168.0.1       < AS9598 >
 
 
 Environment
 ==========
 Ubuntu Server版を推奨とします.
 
-	$ cat /etc/lsb-release 
+	$ cat /etc/lsb-release
 	DISTRIB_ID=Ubuntu
 	DISTRIB_RELEASE=14.04
 	DISTRIB_CODENAME=trusty
@@ -34,7 +40,7 @@ OpenvSwitch自体は起動する必要がないため、停止しておきます
 "openvswitch"カーネルモジュールが組み込まれたことを確認します.
 
 	$ lsmod|grep open
-	openvswitch            65844  0 
+	openvswitch            65844  0
 	gre                    13796  1 openvswitch
 	vxlan                  37629  1 openvswitch
 	libcrc32c              12644  1 openvswitch
@@ -76,7 +82,7 @@ Dockerイメージを確認します.
 
 	$ docker images
 	REPOSITORY                 TAG                 IMAGE ID            CREATED             VIRTUAL SIZE
-	ttsubo/ryubgp-w-ovs2_3_1   latest              acc83513331e        4 hours ago         640.9 MB
+	ttsubo/ryubgp-for-general  latest              acc83513331e        4 hours ago         640.9 MB
 	ubuntu                     14.04.2             63e3c10217b8        4 weeks ago         188.4 MB
 
 
@@ -85,7 +91,7 @@ Quick Start
 ### Dockerコンテナ起動
 WANネットワークの疑似環境を構築します.
 
-	$ sudo python pseudo-wan.py start
+	$ sudo python pseudo-wan.py
 
 	(...snip)
 
@@ -93,51 +99,111 @@ WANネットワークの疑似環境を構築します.
 Dockerコンテナ実行状況を確認します.
 
 	$ docker ps
-	CONTAINER ID        IMAGE                             COMMAND             CREATED             STATUS              PORTS               NAMES
 
 	(...snip)
-	53c8ecb408a2        ubuntu:14.04.2                    "bash"              20 seconds ago      Up 19 seconds                           host_002            
-	d75712aa7402        ubuntu:14.04.2                    "bash"              21 seconds ago      Up 20 seconds                           host_001            
-	2e7daa9472ab        ttsubo/ryubgp-w-ovs2_3_1:latest   "bash"              22 seconds ago      Up 21 seconds                           BGP 
+	CONTAINER ID        IMAGE                             COMMAND             CREATED              STATUS              PORTS                    NAMES
+	070df0f5266e        ubuntu:14.04.2                    "bash"              36 seconds ago       Up 35 seconds                                host_006
+	15eaaca1d8cf        ubuntu:14.04.2                    "bash"              52 seconds ago       Up 51 seconds                                host_005
+	d292c4438bdf        ubuntu:14.04.2                    "bash"              About a minute ago   Up About a minute                            host_004
+	e918d9f264a4        ubuntu:14.04.2                    "bash"              About a minute ago   Up About a minute                            host_003
+	3fbe44a98f79        ubuntu:14.04.2                    "bash"              About a minute ago   Up About a minute                            host_002
+	d0373f6e2480        ubuntu:14.04.2                    "bash"              About a minute ago   Up About a minute                            host_001
+	e759ab624c1c        ttsubo/ttsubo/ryubgp-for-general  "bash"              2 minutes ago        Up 2 minutes        0.0.0.0:8080->8080/tcp   BGP
 
 
 Linuxブリッジ動作状況を確認します.
 
 	$ brctl show
+	bridge name	bridge id		STP enabled	interfaces
+	br001-0		8000.429af835de7e	no		veth0pl22451
+								veth3pl22012
+	br001-1		8000.8ad213aa7d21	no		veth1pl22451
+	br001-2		8000.6a2af35456c3	no		veth2pl22451
+	br001-3		8000.ce5928055031	no		veth3pl22451
+	br001-4		8000.eefe57da33e4	no		veth4pl22451
+	br001-5		8000.4a7304fab1f3	no		veth5pl22451
+	br002-0		8000.060c1ee00c64	no		veth0pl23383
+								veth4pl22012
 
 	(...snip)
-	br001-0		8000.26d81e0f1150	no		veth0pl15223
-								veth2pl14469
-	br001-1		8000.de5df3684915	no		veth1pl15223
-	br001-2		8000.26ff6e6d48f4	no		veth2pl15223
-	br001-3		8000.c253624e0316	no		veth3pl15223
-	br001-4		8000.5e7349365cad	no		veth4pl15223
-	br001-5		8000.166bc3d3012f	no		veth5pl15223
-	br002-0		8000.065a7b8e9d06	no		veth0pl15969
-								veth3pl14469
-	br002-1		8000.163fb46b5c34	no		veth1pl15969
-	br002-2		8000.72ee38fb374f	no		veth2pl15969
-	br002-3		8000.3637a58a2a3e	no		veth3pl15969
-	br002-4		8000.da626c03f655	no		veth4pl15969
-	br002-5		8000.46f6b58c3304	no		veth5pl15969
+
 	br_openflow		8000.000c29fc4f25	no		eth1
-								veth1pl14469
+								veth1pl22012
+	docker0		8000.aa25c6470df6	no		veth4a71ca0
 
 
 ### Dockerコンテナへアクセス
-例えば、dockerコンテナ"host_001_2001"にアクセスして、ネットワーク情報を確認してみます.
+例えば、dockerコンテナ"host_001"にアクセスして、ネットワーク情報を確認してみます.
 
-	$ docker exec -it host_001_2001 bash
+	$ docker exec -it host_001 bash
 	# ip route
-	default via 130.1.0.1 dev vnic1.2001 
-	130.1.0.0/24 dev vnic1.2001  proto kernel  scope link  src 130.1.0.4 
-	130.1.0.0/24 dev vnic2.2001  proto kernel  scope link  src 130.1.0.5 
-	140.1.1.0/24 dev eth0  proto kernel  scope link  src 140.1.1.1 
-	140.1.2.0/24 dev eth1  proto kernel  scope link  src 140.1.2.1 
-	140.1.3.0/24 dev eth2  proto kernel  scope link  src 140.1.3.1 
-	140.1.4.0/24 dev eth3  proto kernel  scope link  src 140.1.4.1 
-	140.1.5.0/24 dev eth4  proto kernel  scope link  src 140.1.5.1 
+	default via 130.1.0.1 dev eth0
+	130.1.0.0/24 dev eth0  proto kernel  scope link  src 130.1.0.2
+	140.1.1.0/24 dev eth1  proto kernel  scope link  src 140.1.1.1
+	140.1.2.0/24 dev eth2  proto kernel  scope link  src 140.1.2.1
+	140.1.3.0/24 dev eth3  proto kernel  scope link  src 140.1.3.1
+	140.1.4.0/24 dev eth4  proto kernel  scope link  src 140.1.4.1
+	140.1.5.0/24 dev eth5  proto kernel  scope link  src 140.1.5.1
 	# exit
+
+
+### BGPルータでの経路情報を確認
+dockerコンテナ"BGP"が開設しているBGPピア状態を確認してみます.
+なお、コマンド操作は、linux母艦上で行います.
+
+	$ cd show
+	$ ./get_peer_status.sh
+	======================================================================
+	get_peer_status
+	======================================================================
+	/openflow/0000000000000001/status/peer
+	----------
+	reply: 'HTTP/1.1 200 OK\r\n'
+	header: Content-Type: application/json; charset=UTF-8
+	header: Content-Length: 194
+	header: Date: Mon, 14 Sep 2015 07:59:50 GMT
+	+++++++++++++++++++++++++++++++
+	2015/09/14 07:59:50 : Peer Status
+	+++++++++++++++++++++++++++++++
+	occurTime            status    myPeer             remotePeer         asNumber
+	-------------------- --------- ------------------ ------------------ --------
+	2015/09/14 07:51:45  Peer Up   10.0.1.1           10.0.0.3           9598
+
+
+
+さらに、dockerコンテナ"BGP"で保持しているBGP経路情報を確認してみます.
+
+	$ ./get_rib.sh
+	======================================================================
+	get_rib
+	======================================================================
+	/openflow/0000000000000001/rib
+	----------
+	reply: 'HTTP/1.1 200 OK\r\n'
+	header: Content-Type: application/json; charset=UTF-8
+	header: Content-Length: 1781
+	header: Date: Mon, 14 Sep 2015 07:59:32 GMT
+	+++++++++++++++++++++++++++++++
+	2015/09/14 07:59:32 : Show rib
+	+++++++++++++++++++++++++++++++
+	Status codes: * valid, > best
+	Origin codes: i - IGP, e - EGP, ? - incomplete
+	     Network                          Labels   Next Hop             Reason          Metric LocPrf Path
+	 *>  9598:202:141.2.1.0/24            [1009]   131.2.0.2            Only Path                     ?
+	 *>  9598:203:141.3.1.0/24            [1011]   131.3.0.2            Only Path                     ?
+	 *>  9598:203:131.3.0.2/32            [1010]   0.0.0.0              Only Path                     ?
+	 *>  9598:103:192.168.103.1/32        [33]     192.168.0.1          Only Path                     9598 ?
+	 *>  9598:201:141.1.1.0/24            [1007]   131.1.0.2            Only Path                     ?
+	 *>  9598:201:131.1.0.2/32            [1006]   0.0.0.0              Only Path                     ?
+	 *>  9598:202:131.2.0.2/32            [1008]   0.0.0.0              Only Path                     ?
+	 *>  9598:102:192.168.102.0/30        [32]     192.168.0.1          Only Path                     9598 ?
+	 *>  9598:103:130.3.0.2/32            [1004]   0.0.0.0              Only Path                     ?
+	 *>  9598:101:130.1.0.2/32            [1000]   0.0.0.0              Only Path                     ?
+	 *>  9598:101:140.1.1.0/24            [1001]   130.1.0.2            Only Path                     ?
+	 *>  9598:102:140.2.1.0/24            [1003]   130.2.0.2            Only Path                     ?
+	 *>  9598:102:130.2.0.2/32            [1002]   0.0.0.0              Only Path                     ?
+	 *>  9598:101:192.168.101.0/30        [29]     192.168.0.1          Only Path                     9598 ?
+	 *>  9598:103:140.3.1.0/24            [1005]   130.3.0.2            Only Path                     ?
 
 
 
@@ -145,7 +211,7 @@ Linuxブリッジ動作状況を確認します.
 ### Dockerコンテナ停止
 Dockerコンテナを停止します.
 
-	$ sudo python pseudo-dc.py stop
+	$ sudo python pseudo-wan.py stop
 
 	(...snip)
 
@@ -154,4 +220,3 @@ Dockerコンテナが起動していないことを確認します.
 
 	$ docker ps
 	CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS
-

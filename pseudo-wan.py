@@ -40,6 +40,7 @@ host_serial_number = 0
 port_serial_number = 2
 macaddr_serial_number = 0
 macaddr_prefix = '00-00-00-'
+total_prefix_number = 30
 dpid = "0000000000000001"
 HOST = "127.0.0.1"
 PORT = "8080"
@@ -58,7 +59,7 @@ def install_docker_and_tools():
           capture=True)
     local("chmod 755 /usr/local/bin/pipework", capture=True)
     local("docker pull ubuntu:14.04.2", capture=True)
-    local("docker pull ttsubo/ryubgp-w-ovs2_3_1:latest", capture=True)
+    local("docker pull ttsubo/ryubgp-w-general:latest", capture=True)
     local("mkdir -p /var/run/netns", capture=True)
 
 def request_info(url_path, method, request=None):
@@ -85,7 +86,7 @@ def request_info(url_path, method, request=None):
 class Router(object):
     def __init__(self, name):
         self.name = name
-        self.image = 'ttsubo/ryubgp-w-ovs2_3_1:latest'
+        self.image = 'ttsubo/ryubgp-for-general:latest'
 
         if self.name in get_containers():
             print ("--- Delete container {0} ---".format(self.name))
@@ -109,7 +110,7 @@ class Router(object):
         c = CmdBuffer(' ')
         c << "docker run --privileged=true"
         c << "-v {0}/work:/tmp -p 8080:8080".format(current_dir)
-        c << "--name {0} -h {1} -itd {1}".format(self.name, self.image)
+        c << "--name {0} -h {0} -itd {1}".format(self.name, self.image)
         c << "bash"
 
         print ("--- Create container {0} ---".format(self.name))
@@ -406,7 +407,8 @@ def create_prefix(ryubgp, connectPrefix_init, localPrefix_init, routeDist_init, 
         print "Create Host"
         print "///////////////////////////"
         print "--- create_host ({0}) ---".format(host)
-        hostname = Host(host, host_serial_number, connect_prefix, local_prefix, 5)
+        hostname = Host(host, host_serial_number, connect_prefix, local_prefix,
+                   total_prefix_number)
         hosts.append(hostname)
         [host.run() for host in hosts]
 
@@ -455,12 +457,15 @@ def create_prefix(ryubgp, connectPrefix_init, localPrefix_init, routeDist_init, 
         print "////////////////////////////////////////"
         print "create_route ({0})".format(route_dist)
         print "////////////////////////////////////////"
-        host_subnet = IPNetwork(local_prefix)
-        destination = host_subnet.ip
-        netmask = host_subnet.netmask
-        ret = ryubgp.regist_route_param(str(destination), str(netmask),
-                                        str(host_ipaddress), route_dist)
-        print ("result: [%s]"%ret)
+        for i in range(total_prefix_number):
+            host_subnet = IPNetwork(local_prefix)
+            host_subnet = IPNetwork(local_prefix)
+            destination = host_subnet.ip + (256 * i) + 1
+            netmask = host_subnet.netmask
+            ret = ryubgp.regist_route_param(str(destination), str(netmask),
+                                            str(host_ipaddress), route_dist)
+            time.sleep(0.2)
+            print ("result: [%s]"%ret)
 
 def create_tenant():
     ryubgp = start_deploy()
