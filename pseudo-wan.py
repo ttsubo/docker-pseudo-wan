@@ -58,7 +58,7 @@ def install_docker_and_tools():
           capture=True)
     local("chmod 755 /usr/local/bin/pipework", capture=True)
     local("docker pull ubuntu:14.04.2", capture=True)
-    local("docker pull ttsubo/ryubgp-w-ovs2_3_1:latest", capture=True)
+    local("docker pull ttsubo/ryubgp-for-apgw:latest", capture=True)
     local("mkdir -p /var/run/netns", capture=True)
 
 def request_info(url_path, method, request=None):
@@ -85,7 +85,7 @@ def request_info(url_path, method, request=None):
 class Router(object):
     def __init__(self, name):
         self.name = name
-        self.image = 'ttsubo/ryubgp-w-ovs2_3_1:latest'
+        self.image = 'ttsubo/ryubgp-for-apgw:latest'
 
         if self.name in get_containers():
             print ("--- Delete container {0} ---".format(self.name))
@@ -109,7 +109,7 @@ class Router(object):
         c = CmdBuffer(' ')
         c << "docker run --privileged=true"
         c << "-v {0}/work:/tmp -p 8080:8080".format(current_dir)
-        c << "--name {0} -h {1} -itd {1}".format(self.name, self.image)
+        c << "--name {0} -h {0} -itd {1}".format(self.name, self.image)
         c << "bash"
 
         print ("--- Create container {0} ---".format(self.name))
