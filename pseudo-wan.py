@@ -59,7 +59,7 @@ def install_docker_and_tools():
           capture=True)
     local("chmod 755 /usr/local/bin/pipework", capture=True)
     local("docker pull ubuntu:14.04.2", capture=True)
-    local("docker pull ttsubo/ryubgp-w-general:latest", capture=True)
+    local("docker pull ttsubo/ryubgp-for-general:latest", capture=True)
     local("mkdir -p /var/run/netns", capture=True)
 
 def request_info(url_path, method, request=None):
@@ -357,12 +357,12 @@ def start_deploy():
     wan_subnet = IPNetwork(ipaddress + '/' + netmask)
     ryubgp.create_wan_port('eth1', wan_subnet, macaddress)
     local("brctl addif br_openflow eth1", capture=True)
-    time.sleep(2)
     ret = ryubgp.regist_interface_param(port, macaddress, ipaddress, netmask,
                                     opposite_ipaddress, opposite_asnumber,
                                     port_offload_bgp, bgp_med, bgp_local_pref,
                                     bgp_filter_asnumber, vrf_routeDist)
     print ("result: [%s]"%ret)
+    time.sleep(60)
     return ryubgp
 
 
@@ -400,24 +400,22 @@ def create_prefix(ryubgp, connectPrefix_init, localPrefix_init, routeDist_init, 
         macaddr_serial_number += 1
         host_serial_number += 1
 
-        hosts = []
-        host = "host_%03d"%host_serial_number
-
-        print "///////////////////////////"
-        print "Create Host"
-        print "///////////////////////////"
-        print "--- create_host ({0}) ---".format(host)
-        hostname = Host(host, host_serial_number, connect_prefix, local_prefix,
-                   total_prefix_number)
-        hosts.append(hostname)
-        [host.run() for host in hosts]
-
         print "///////////////////////////"
         print "create_vrf ({0})".format(route_dist)
         print "///////////////////////////"
         ret = ryubgp.regist_vrf_param(route_dist, route_dist, route_dist)
         print ("result: [%s]"%ret)
-        time.sleep(3)
+
+        print "///////////////////////////"
+        print "Create Host"
+        print "///////////////////////////"
+        hosts = []
+        host = "host_%03d"%host_serial_number + '_' + "%03d"%routeDist_serial_number
+        print "--- create_host ({0}) ---".format(host)
+        hostname = Host(host, host_serial_number, connect_prefix, local_prefix,
+                   total_prefix_number)
+        hosts.append(hostname)
+        [host.run() for host in hosts]
 
         print "////////////////////////////////////////"
         print "create_lan_interface ({0})".format(route_dist)
@@ -444,7 +442,7 @@ def create_prefix(ryubgp, connectPrefix_init, localPrefix_init, routeDist_init, 
                                           bgp_med, bgp_local_pref,
                                           bgp_filter_asnumber, route_dist)
         print ("result: [%s]"%ret)
-        time.sleep(3)
+        time.sleep(5)
 
         print "////////////////////////////////////////"
         print "set_redistribute_on ({0})".format(route_dist)
@@ -452,7 +450,6 @@ def create_prefix(ryubgp, connectPrefix_init, localPrefix_init, routeDist_init, 
         redistribute = "ON"
         ret = ryubgp.regist_redistribute_on(redistribute, route_dist)
         print ("result: [%s]"%ret)
-        time.sleep(3)
 
         print "////////////////////////////////////////"
         print "create_route ({0})".format(route_dist)
@@ -464,13 +461,19 @@ def create_prefix(ryubgp, connectPrefix_init, localPrefix_init, routeDist_init, 
             netmask = host_subnet.netmask
             ret = ryubgp.regist_route_param(str(destination), str(netmask),
                                             str(host_ipaddress), route_dist)
-            time.sleep(0.2)
             print ("result: [%s]"%ret)
 
 def create_tenant():
     ryubgp = start_deploy()
-    create_prefix(ryubgp, '130.1.0.0/24', '140.1.1.0/24','9598:101', 3)
-    create_prefix(ryubgp, '131.1.0.0/24', '141.1.1.0/24','9598:201', 3)
+    create_prefix(ryubgp,'10.1.0.0/24','110.1.0.0/24','9598:1006110001', 132)
+    create_prefix(ryubgp,'12.89.0.0/24','112.89.0.0/24','9598:1006013201', 20)
+    create_prefix(ryubgp,'13.133.0.0/24','113.133.0.0/24','9598:1006014301', 4)
+    create_prefix(ryubgp,'13.145.0.0/24','113.145.0.0/24','9598:1006014305', 3)
+    create_prefix(ryubgp,'13.154.0.0/24','113.154.0.0/24','9598:1006014308', 10)
+    create_prefix(ryubgp,'13.184.0.0/24','113.184.0.0/24','9598:1006014318', 8)
+    create_prefix(ryubgp,'13.208.0.0/24','113.208.0.0/24','9598:1006014326', 9)
+    create_prefix(ryubgp,'15.221.0.0/24','115.221.0.0/24','9598:1006011501', 10)
+    create_prefix(ryubgp,'16.64.0.0/24','116.64.0.0/24','9598:1006019534', 4)
 
 
 if __name__ == '__main__':
