@@ -58,7 +58,7 @@ def install_docker_and_tools():
     local("wget https://raw.github.com/jpetazzo/pipework/master/pipework -O /usr/local/bin/pipework",
           capture=True)
     local("chmod 755 /usr/local/bin/pipework", capture=True)
-    local("docker pull ubuntu:14.04.2", capture=True)
+    local("docker pull ubuntu:14.04.3", capture=True)
     local("docker pull ttsubo/ryubgp-for-apgw:latest", capture=True)
     local("mkdir -p /var/run/netns", capture=True)
 
@@ -219,11 +219,11 @@ class Router(object):
 class Host(object):
     def __init__(self, name, serial, conn_ip, tenant_ip, tenant_num):
         self.name = name
-        self.image = 'ubuntu:14.04.2'
+        self.image = 'ubuntu:14.04.3'
         self.serial = serial
         self.conn_ip = conn_ip
         self.tenant_ip = tenant_ip
-        self.tenant_num = tenant_num
+        self.tenant_num = 1
 
         if self.name in get_containers():
             print ("--- Delete container {0} ---".format(self.name))
@@ -263,6 +263,8 @@ class Host(object):
             br_name = "br%03d"%serial + '-' + str(i+1)
             ifname = 'eth'+str(i+1)
             self.pipework(br_name, ifname, host, prefix)
+        # dummy_sleep
+	time.sleep(15)
 
     def add_gw(self, conn_ip):
         subnet = IPNetwork(conn_ip)
@@ -331,7 +333,7 @@ def start_deploy():
         label_range_end = CONF.Bgp.label_range_end
     except cfg.ConfigFilesNotFoundError:
         print "Error: Not Found <OpenFlow.ini> "
-    ryubgp = Router('BGP')
+    ryubgp = Router('RyuBGP')
     ryubgp.start_bgpspeaker(as_number, router_id, label_range_start, label_range_end)
 
     print "###########################"
@@ -362,6 +364,7 @@ def start_deploy():
                                     port_offload_bgp, bgp_med, bgp_local_pref,
                                     bgp_filter_asnumber, vrf_routeDist)
     print ("result: [%s]"%ret)
+    print "... Please wait for a while ..."
     time.sleep(60)
     return ryubgp
 
@@ -373,8 +376,6 @@ def create_prefix(ryubgp, connectPrefix_init, localPrefix_init, routeDist_init, 
     routeDist_split = routeDist_init.split(":")
     routeDist_prefix = routeDist_split[0] + ':'
     routeDist_serial_number = int(routeDist_split[1])
-    print routeDist_prefix
-    print routeDist_serial_number
     
     print "###########################"
     print "3. Activate Lan interface"
@@ -442,7 +443,7 @@ def create_prefix(ryubgp, connectPrefix_init, localPrefix_init, routeDist_init, 
                                           bgp_med, bgp_local_pref,
                                           bgp_filter_asnumber, route_dist)
         print ("result: [%s]"%ret)
-        time.sleep(3)
+        time.sleep(5)
 
         print "////////////////////////////////////////"
         print "set_redistribute_on ({0})".format(route_dist)
