@@ -40,7 +40,7 @@ host_serial_number = 0
 port_serial_number = 2
 macaddr_serial_number = 0
 macaddr_prefix = '00-00-00-'
-total_prefix_number = 30
+total_prefix_number = 10
 dpid = "0000000000000001"
 HOST = "127.0.0.1"
 PORT = "8080"
@@ -58,7 +58,7 @@ def install_docker_and_tools():
     local("wget https://raw.github.com/jpetazzo/pipework/master/pipework -O /usr/local/bin/pipework",
           capture=True)
     local("chmod 755 /usr/local/bin/pipework", capture=True)
-    local("docker pull ubuntu:14.04.2", capture=True)
+    local("docker pull ubuntu:14.04.3", capture=True)
     local("docker pull ttsubo/ryubgp-for-general:latest", capture=True)
     local("mkdir -p /var/run/netns", capture=True)
 
@@ -219,7 +219,7 @@ class Router(object):
 class Host(object):
     def __init__(self, name, serial, conn_ip, tenant_ip, tenant_num):
         self.name = name
-        self.image = 'ubuntu:14.04.2'
+        self.image = 'ubuntu:14.04.3'
         self.serial = serial
         self.conn_ip = conn_ip
         self.tenant_ip = tenant_ip
@@ -331,7 +331,7 @@ def start_deploy():
         label_range_end = CONF.Bgp.label_range_end
     except cfg.ConfigFilesNotFoundError:
         print "Error: Not Found <OpenFlow.ini> "
-    ryubgp = Router('BGP')
+    ryubgp = Router('RyuBGP')
     ryubgp.start_bgpspeaker(as_number, router_id, label_range_start, label_range_end)
 
     print "###########################"
@@ -362,6 +362,7 @@ def start_deploy():
                                     port_offload_bgp, bgp_med, bgp_local_pref,
                                     bgp_filter_asnumber, vrf_routeDist)
     print ("result: [%s]"%ret)
+    print "... Please wait for a while ..."
     time.sleep(60)
     return ryubgp
 
@@ -373,8 +374,6 @@ def create_prefix(ryubgp, connectPrefix_init, localPrefix_init, routeDist_init, 
     routeDist_split = routeDist_init.split(":")
     routeDist_prefix = routeDist_split[0] + ':'
     routeDist_serial_number = int(routeDist_split[1])
-    print routeDist_prefix
-    print routeDist_serial_number
     
     print "###########################"
     print "3. Activate Lan interface"
@@ -465,15 +464,10 @@ def create_prefix(ryubgp, connectPrefix_init, localPrefix_init, routeDist_init, 
 
 def create_tenant():
     ryubgp = start_deploy()
-    create_prefix(ryubgp,'10.1.0.0/24','110.1.0.0/24','9598:1006110001', 132)
-    create_prefix(ryubgp,'12.89.0.0/24','112.89.0.0/24','9598:1006013201', 20)
-    create_prefix(ryubgp,'13.133.0.0/24','113.133.0.0/24','9598:1006014301', 4)
-    create_prefix(ryubgp,'13.145.0.0/24','113.145.0.0/24','9598:1006014305', 3)
-    create_prefix(ryubgp,'13.154.0.0/24','113.154.0.0/24','9598:1006014308', 10)
-    create_prefix(ryubgp,'13.184.0.0/24','113.184.0.0/24','9598:1006014318', 8)
-    create_prefix(ryubgp,'13.208.0.0/24','113.208.0.0/24','9598:1006014326', 9)
-    create_prefix(ryubgp,'15.221.0.0/24','115.221.0.0/24','9598:1006011501', 10)
-    create_prefix(ryubgp,'16.64.0.0/24','116.64.0.0/24','9598:1006019534', 4)
+    create_prefix(ryubgp,'10.1.0.0/24','110.1.0.0/24','65001:101', 3)
+    create_prefix(ryubgp,'20.1.0.0/24','120.1.0.0/24','65001:201', 3)
+    create_prefix(ryubgp,'30.1.0.0/24','130.1.0.0/24','65001:301', 2)
+    create_prefix(ryubgp,'40.1.0.0/24','140.1.0.0/24','65001:401', 2)
 
 
 if __name__ == '__main__':

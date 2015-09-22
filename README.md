@@ -1,12 +1,15 @@
 What's docker-pseudo-wan
 ==========
-Dockerコンテナを活用して、WANネットワークの疑似環境を構築するものです.
+Dockerコンテナを活用して、MPLS-VPNネットワークの疑似環境を構築するものです.
+なお、RyuBGPとBGPピア接続する対向BGPルータは、mp-BGPを動作させる必要があります.
 
-	                   (static) +------------+         mp-BGP         +----------+	
-	host_001 container -------+ |   RyuBGP   | +--------------------+ |   BGP    | +---- ...
-	host_002 container -------+ |  container |                        |  Router  |
-	     :                      +------------+                        +----------+
-	              < AS65000 >        192.168.0.2                    192.168.0.1       < AS9598 >
+	                       (static) +-----------+     mp-BGP    +----------+	
+	host_001_101 container -------+ |  RyuBGP   | +-----------+ |   BGP    | +---- ...
+	host_002_102 container -------+ | container | (eth1)        |  Router  |
+	     :                          +-----------+               +----------+
+	                     < AS65001 >   192.168.0.1             192.168.0.2  < AS65002 >
+
+           <------- docker-pseudo-wanのスコープ ------>            <---- スコープ外 ---->
 
 
 Environment
@@ -19,12 +22,15 @@ Ubuntu Server版を推奨とします.
 	DISTRIB_CODENAME=trusty
 	DISTRIB_DESCRIPTION="Ubuntu 14.04.3 LTS"
 
+
 Dockerコンテナで構成されるWANネットワークと外部環境と通信するために、eth1のインタフェースを前提とします.
+すなわち、RyuBGPと対向BGPルータのあいだでBGPピアを確立するためには、事前にeth1のインターフェースと結線しておく必要があります.
 
 	$ ip link
-        ...
-	3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP mode DEFAULT group default qlen 1000
-	    link/ether 00:0c:29:fc:4f:25 brd ff:ff:ff:ff:ff:ff
+	...
+	3: eth1: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP mode DEFAULT group default qlen 1000
+	    link/ether 52:54:00:1a:b0:d5 brd ff:ff:ff:ff:ff:ff
+
 
 
 Installation
@@ -81,13 +87,61 @@ Githubよりリポジトリ情報を取得します.
 Dockerイメージを確認します.
 
 	$ docker images
-	REPOSITORY                 TAG                 IMAGE ID            CREATED             VIRTUAL SIZE
-	ttsubo/ryubgp-for-general  latest              acc83513331e        4 hours ago         640.9 MB
-	ubuntu                     14.04.2             63e3c10217b8        4 weeks ago         188.4 MB
+	REPOSITORY                  TAG                 IMAGE ID            CREATED             VIRTUAL SIZE
+	ttsubo/ryubgp-for-general   latest              9dd5bb56bf3e        2 days ago          644.4 MB
+	ubuntu                      14.04.3             91e54dfb1179        4 weeks ago         188.4 MB
 
 
 Quick Start
 ===========
+### BGPピア接続用の設定ファイルの編集
+RyuBGPと対向BGPルータ間でBGPピアを確立するための設定を行います.
+
+	$ vi OpenFlow.ini 
+	------------------------------
+	[Bgp]
+	as_number = "65001"
+	router_id = "10.10.10.1"
+	label_range_start = "1000"
+	label_range_end = "1999"
+
+	[Port]
+	port = "1"
+	macaddress = "00:00:00:01:01:01"
+	ipaddress = "192.168.0.1"
+	netmask = "255.255.255.252"
+	opposite_ipaddress = "192.168.0.2"
+	opposite_asnumber = "65002"
+	port_offload_bgp = "2"
+	bgp_med = "100"
+	bgp_local_pref = ""
+	bgp_filter_asnumber = ""
+	vrf_routeDist = ""
+
+
+ちなみに、BGPピアを確立するためのIPアドレス値は、Linuxネットワーク設定情報を使用しません.
+実際にBGPピア接続で使用するIPアドレス値は、OpenFlow.iniで指定したipaddress"192.168.0.1"が使用されます.macaddressも同様です.
+
+	$ ip addr
+	...
+	3: eth1: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+	    link/ether 52:54:00:1a:b0:d5 brd ff:ff:ff:ff:ff:ff
+	    inet6 fe80::5054:ff:fe1a:b0d5/64 scope link 
+	       valid_lft forever preferred_lft forever
+
+
+"eth1"ネットワーク設定では、プロミスキャストを有効にしておきます.
+
+	$ sudo vi /etc/network/interfaces
+	...
+	auto eth1
+	iface eth1 inet manual
+	up ifconfig $IFACE 0.0.0.0 up
+	up ip link set $IFACE promisc on
+	down ip link set $IFACE promisc off
+	down ifconfig $IFACE down
+
+
 ### Dockerコンテナ起動
 WANネットワークの疑似環境を構築します.
 
@@ -99,57 +153,23 @@ WANネットワークの疑似環境を構築します.
 Dockerコンテナ実行状況を確認します.
 
 	$ docker ps
-
-	(...snip)
-	CONTAINER ID        IMAGE                             COMMAND             CREATED              STATUS              PORTS                    NAMES
-	070df0f5266e        ubuntu:14.04.2                    "bash"              36 seconds ago       Up 35 seconds                                host_006
-	15eaaca1d8cf        ubuntu:14.04.2                    "bash"              52 seconds ago       Up 51 seconds                                host_005
-	d292c4438bdf        ubuntu:14.04.2                    "bash"              About a minute ago   Up About a minute                            host_004
-	e918d9f264a4        ubuntu:14.04.2                    "bash"              About a minute ago   Up About a minute                            host_003
-	3fbe44a98f79        ubuntu:14.04.2                    "bash"              About a minute ago   Up About a minute                            host_002
-	d0373f6e2480        ubuntu:14.04.2                    "bash"              About a minute ago   Up About a minute                            host_001
-	e759ab624c1c        ttsubo/ttsubo/ryubgp-for-general  "bash"              2 minutes ago        Up 2 minutes        0.0.0.0:8080->8080/tcp   BGP
-
-
-Linuxブリッジ動作状況を確認します.
-
-	$ brctl show
-	bridge name	bridge id		STP enabled	interfaces
-	br001-0		8000.429af835de7e	no		veth0pl22451
-								veth3pl22012
-	br001-1		8000.8ad213aa7d21	no		veth1pl22451
-	br001-2		8000.6a2af35456c3	no		veth2pl22451
-	br001-3		8000.ce5928055031	no		veth3pl22451
-	br001-4		8000.eefe57da33e4	no		veth4pl22451
-	br001-5		8000.4a7304fab1f3	no		veth5pl22451
-	br002-0		8000.060c1ee00c64	no		veth0pl23383
-								veth4pl22012
-
-	(...snip)
-
-	br_openflow		8000.000c29fc4f25	no		eth1
-								veth1pl22012
-	docker0		8000.aa25c6470df6	no		veth4a71ca0
+	CONTAINER ID        IMAGE                              COMMAND             CREATED             STATUS              PORTS                    NAMES
+	932903e0a336        ubuntu:14.04.3                     "bash"              15 minutes ago      Up 15 minutes                                host_010_402        
+	aa6dfeef1069        ubuntu:14.04.3                     "bash"              15 minutes ago      Up 15 minutes                                host_009_401        
+	94ac2f40b68e        ubuntu:14.04.3                     "bash"              15 minutes ago      Up 15 minutes                                host_008_302        
+	f41d84954f4a        ubuntu:14.04.3                     "bash"              15 minutes ago      Up 15 minutes                                host_007_301        
+	3b7497494c22        ubuntu:14.04.3                     "bash"              15 minutes ago      Up 15 minutes                                host_006_203        
+	ceb959815478        ubuntu:14.04.3                     "bash"              16 minutes ago      Up 16 minutes                                host_005_202        
+	f2788cfc906e        ubuntu:14.04.3                     "bash"              16 minutes ago      Up 16 minutes                                host_004_201        
+	8e82eee2cc1e        ubuntu:14.04.3                     "bash"              16 minutes ago      Up 16 minutes                                host_003_103        
+	418137d00faf        ubuntu:14.04.3                     "bash"              16 minutes ago      Up 16 minutes                                host_002_102        
+	2356b001d345        ubuntu:14.04.3                     "bash"              16 minutes ago      Up 16 minutes                                host_001_101        
+	5d1ea536a8af        ttsubo/ryubgp-for-general:latest   "bash"              17 minutes ago      Up 17 minutes       0.0.0.0:8080->8080/tcp   RyuBGP 
 
 
-### Dockerコンテナへアクセス
-例えば、dockerコンテナ"host_001"にアクセスして、ネットワーク情報を確認してみます.
-
-	$ docker exec -it host_001 bash
-	# ip route
-	default via 130.1.0.1 dev eth0
-	130.1.0.0/24 dev eth0  proto kernel  scope link  src 130.1.0.2
-	140.1.1.0/24 dev eth1  proto kernel  scope link  src 140.1.1.1
-	140.1.2.0/24 dev eth2  proto kernel  scope link  src 140.1.2.1
-	140.1.3.0/24 dev eth3  proto kernel  scope link  src 140.1.3.1
-	140.1.4.0/24 dev eth4  proto kernel  scope link  src 140.1.4.1
-	140.1.5.0/24 dev eth5  proto kernel  scope link  src 140.1.5.1
-	# exit
-
-
-### BGPルータでの経路情報を確認
-dockerコンテナ"BGP"が開設しているBGPピア状態を確認してみます.
-なお、コマンド操作は、linux母艦上で行います.
+### RyuBGPでの経路情報を確認
+dockerコンテナ"RyuBGP"が開設しているBGPピア状態を確認してみます.
+なお、コマンド操作は、Linux上で行います.
 
 	$ cd show
 	$ ./get_peer_status.sh
@@ -160,52 +180,269 @@ dockerコンテナ"BGP"が開設しているBGPピア状態を確認してみま
 	----------
 	reply: 'HTTP/1.1 200 OK\r\n'
 	header: Content-Type: application/json; charset=UTF-8
-	header: Content-Length: 194
-	header: Date: Mon, 14 Sep 2015 07:59:50 GMT
+	header: Content-Length: 200
+	header: Date: Tue, 22 Sep 2015 21:19:02 GMT
 	+++++++++++++++++++++++++++++++
-	2015/09/14 07:59:50 : Peer Status
+	2015/09/22 21:19:02 : Peer Status
 	+++++++++++++++++++++++++++++++
 	occurTime            status    myPeer             remotePeer         asNumber
 	-------------------- --------- ------------------ ------------------ --------
-	2015/09/14 07:51:45  Peer Up   10.0.1.1           10.0.0.3           9598
+	2015/09/22 20:51:11  Peer Up   10.10.10.1         192.168.0.2        65002
 
 
+つぎに、RyuBGPのインターフェース情報を確認してみます.
+各インタフェースでのvrf収容構成については、RD値により識別することができます.
 
-さらに、dockerコンテナ"BGP"で保持しているBGP経路情報を確認してみます.
-
-	$ ./get_rib.sh
+	$ ./get_interface.sh 
 	======================================================================
-	get_rib
+	get_interface
 	======================================================================
-	/openflow/0000000000000001/rib
+	/openflow/0000000000000001/interface
 	----------
 	reply: 'HTTP/1.1 200 OK\r\n'
 	header: Content-Type: application/json; charset=UTF-8
-	header: Content-Length: 1781
-	header: Date: Mon, 14 Sep 2015 07:59:32 GMT
+	header: Content-Length: 1290
+	header: Date: Tue, 22 Sep 2015 21:20:34 GMT
 	+++++++++++++++++++++++++++++++
-	2015/09/14 07:59:32 : Show rib
+	2015/09/22 21:20:34 : PortTable
+	+++++++++++++++++++++++++++++++
+	portNo   IpAddress       MacAddress        RouteDist
+	-------- --------------- ----------------- ---------
+	       1 192.168.0.1     00:00:00:01:01:01 
+	       3 10.1.0.1        00-00-00-00-00-01 65001:101
+	       4 10.2.0.1        00-00-00-00-00-02 65001:102
+	       5 10.3.0.1        00-00-00-00-00-03 65001:103
+	       6 20.1.0.1        00-00-00-00-00-04 65001:201
+	       7 20.2.0.1        00-00-00-00-00-05 65001:202
+	       8 20.3.0.1        00-00-00-00-00-06 65001:203
+	       9 30.1.0.1        00-00-00-00-00-07 65001:301
+	       a 30.2.0.1        00-00-00-00-00-08 65001:302
+	       b 40.1.0.1        00-00-00-00-00-09 65001:401
+	       c 40.2.0.1        00-00-00-00-00-0A 65001:402
+
+
+RyuBGPが保持しているARPテーブルを確認することも可能です.
+もし、対向BGPルータとの間でピア接続がうまく確立できない場合には、対向BGPルータのmacaddressが正しく学習できているかを確認します.
+
+	$ ./get_arp.sh 
+	======================================================================
+	get_arp
+	======================================================================
+	/openflow/0000000000000001/arp
+	----------
+	reply: 'HTTP/1.1 200 OK\r\n'
+	header: Content-Type: application/json; charset=UTF-8
+	header: Content-Length: 963
+	header: Date: Tue, 22 Sep 2015 21:22:18 GMT
+	+++++++++++++++++++++++++++++++
+	2015/09/22 21:22:18 : ArpTable 
+	+++++++++++++++++++++++++++++++
+	portNo   MacAddress        IpAddress
+	-------- ----------------- ------------
+	       1 7c:c3:a1:87:8f:65 192.168.0.2
+	       3 c2:00:31:6c:7d:04 10.1.0.2
+	       4 06:f0:61:7c:00:86 10.2.0.2
+	       5 9a:5c:84:f3:fa:65 10.3.0.2
+	       6 32:e6:18:b4:73:b4 20.1.0.2
+	       7 fe:9f:ee:e3:cc:72 20.2.0.2
+	       8 66:13:b3:72:e9:50 20.3.0.2
+	       9 aa:ce:29:6d:a2:e9 30.1.0.2
+	       a f6:0b:01:f5:89:d0 30.2.0.2
+	       b 56:b0:09:b8:3b:3e 40.1.0.2
+	       c 92:2f:1b:71:43:9b 40.2.0.2
+
+
+さらに、dockerコンテナ"RyuBGP"で保持しているBGP経路情報を確認してみます.
+
+	$ ./get_vrf.sh
+	======================================================================
+	get_vrf
+	======================================================================
+	/openflow/0000000000000001/vrf
+	----------
+	reply: 'HTTP/1.1 200 OK\r\n'
+	header: Content-Type: application/json; charset=UTF-8
+	header: Content-Length: 12819
+	header: Date: Wed, 23 Sep 2015 05:02:20 GMT
+	+++++++++++++++++++++++++++++++
+	2015/09/23 05:02:20 : Show vrf 
 	+++++++++++++++++++++++++++++++
 	Status codes: * valid, > best
 	Origin codes: i - IGP, e - EGP, ? - incomplete
 	     Network                          Labels   Next Hop             Reason          Metric LocPrf Path
-	 *>  9598:202:141.2.1.0/24            [1009]   131.2.0.2            Only Path                     ?
-	 *>  9598:203:141.3.1.0/24            [1011]   131.3.0.2            Only Path                     ?
-	 *>  9598:203:131.3.0.2/32            [1010]   0.0.0.0              Only Path                     ?
-	 *>  9598:103:192.168.103.1/32        [33]     192.168.0.1          Only Path                     9598 ?
-	 *>  9598:201:141.1.1.0/24            [1007]   131.1.0.2            Only Path                     ?
-	 *>  9598:201:131.1.0.2/32            [1006]   0.0.0.0              Only Path                     ?
-	 *>  9598:202:131.2.0.2/32            [1008]   0.0.0.0              Only Path                     ?
-	 *>  9598:102:192.168.102.0/30        [32]     192.168.0.1          Only Path                     9598 ?
-	 *>  9598:103:130.3.0.2/32            [1004]   0.0.0.0              Only Path                     ?
-	 *>  9598:101:130.1.0.2/32            [1000]   0.0.0.0              Only Path                     ?
-	 *>  9598:101:140.1.1.0/24            [1001]   130.1.0.2            Only Path                     ?
-	 *>  9598:102:140.2.1.0/24            [1003]   130.2.0.2            Only Path                     ?
-	 *>  9598:102:130.2.0.2/32            [1002]   0.0.0.0              Only Path                     ?
-	 *>  9598:101:192.168.101.0/30        [29]     192.168.0.1          Only Path                     9598 ?
-	 *>  9598:103:140.3.1.0/24            [1005]   130.3.0.2            Only Path                     ?
+
+	(...snip)
+
+	VPN: ('65001:101', 'ipv4')
+	 *>  130.1.7.0/24                     None     192.168.0.2          Only Path       100           65002 ?
+	 *>  110.1.0.0/24                     None     10.1.0.2             Only Path                     ?
+	 *>  110.1.2.0/24                     None     10.1.0.2             Only Path                     ?
+	 *>  110.1.6.0/24                     None     10.1.0.2             Only Path                     ?
+	 *>  130.1.5.0/24                     None     192.168.0.2          Only Path       100           65002 ?
+	 *>  110.1.5.0/24                     None     10.1.0.2             Only Path                     ?
+	 *>  130.1.2.0/24                     None     192.168.0.2          Only Path       100           65002 ?
+	 *>  130.1.3.0/24                     None     192.168.0.2          Only Path       100           65002 ?
+	 *>  30.1.0.2/32                      None     192.168.0.2          Only Path       100           65002 ?
+	 *>  10.1.0.2/32                      None     0.0.0.0              Only Path                     ?
+	 *>  110.1.9.0/24                     None     10.1.0.2             Only Path                     ?
+	 *>  130.1.6.0/24                     None     192.168.0.2          Only Path       100           65002 ?
+	 *>  130.1.1.0/24                     None     192.168.0.2          Only Path       100           65002 ?
+	 *>  130.1.9.0/24                     None     192.168.0.2          Only Path       100           65002 ?
+	 *>  110.1.1.0/24                     None     10.1.0.2             Only Path                     ?
+	 *>  110.1.4.0/24                     None     10.1.0.2             Only Path                     ?
+	 *>  110.1.3.0/24                     None     10.1.0.2             Only Path                     ?
+	 *>  110.1.7.0/24                     None     10.1.0.2             Only Path                     ?
+	 *>  130.1.0.0/24                     None     192.168.0.2          Only Path       100           65002 ?
+	 *>  130.1.4.0/24                     None     192.168.0.2          Only Path       100           65002 ?
+	 *>  130.1.8.0/24                     None     192.168.0.2          Only Path       100           65002 ?
+	 *>  110.1.8.0/24                     None     10.1.0.2             Only Path                     ?
+
+	(...snip)
+
+BGP経路情報に加えて、MPLSラベル情報も確認してみます.
+
+	$ ./get_mpls.sh 
+	======================================================================
+	get_mpls
+	======================================================================
+	/openflow/0000000000000001/mpls
+	----------
+	reply: 'HTTP/1.1 200 OK\r\n'
+	header: Content-Type: application/json; charset=UTF-8
+	header: Content-Length: 18603
+	header: Date: Wed, 23 Sep 2015 05:04:25 GMT
+	+++++++++++++++++++++++++++++++
+	2015/09/23 05:04:25 : MplsTable 
+	+++++++++++++++++++++++++++++++
+	routeDist  prefix             nexthop          label
+	---------- ------------------ ---------------- -----
+	65001:101  10.1.0.2/32        0.0.0.0          1000 
+	65001:101  110.1.0.0/24       10.1.0.2         1001 
+	65001:101  110.1.1.0/24       10.1.0.2         1001 
+	65001:101  110.1.2.0/24       10.1.0.2         1001 
+	65001:101  110.1.3.0/24       10.1.0.2         1001 
+	65001:101  110.1.4.0/24       10.1.0.2         1001 
+	65001:101  110.1.5.0/24       10.1.0.2         1001 
+	65001:101  110.1.6.0/24       10.1.0.2         1001 
+	65001:101  110.1.7.0/24       10.1.0.2         1001 
+	65001:101  110.1.8.0/24       10.1.0.2         1001 
+	65001:101  110.1.9.0/24       10.1.0.2         1001 
+	65001:101  130.1.0.0/24       192.168.0.2      2001 
+	65001:101  130.1.1.0/24       192.168.0.2      2001 
+	65001:101  130.1.2.0/24       192.168.0.2      2001 
+	65001:101  130.1.3.0/24       192.168.0.2      2001 
+	65001:101  130.1.4.0/24       192.168.0.2      2001 
+	65001:101  130.1.5.0/24       192.168.0.2      2001 
+	65001:101  130.1.6.0/24       192.168.0.2      2001 
+	65001:101  130.1.7.0/24       192.168.0.2      2001 
+	65001:101  130.1.8.0/24       192.168.0.2      2001 
+	65001:101  130.1.9.0/24       192.168.0.2      2001 
+	65001:101  30.1.0.2/32        192.168.0.2      2000 
+
+	(...snip)
 
 
+### Dockerコンテナへアクセス
+dockerコンテナ"host_001_101"にアクセスして、ネットワーク情報を確認してみます.
+
+	$ docker exec -it host_001_101 bash
+	# route -n
+	Kernel IP routing table
+	Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+	0.0.0.0         10.1.0.1        0.0.0.0         UG    0      0        0 eth0
+	10.1.0.0        0.0.0.0         255.255.255.0   U     0      0        0 eth0
+	110.1.0.0       0.0.0.0         255.255.255.0   U     0      0        0 eth1
+	110.1.1.0       0.0.0.0         255.255.255.0   U     0      0        0 eth2
+	110.1.2.0       0.0.0.0         255.255.255.0   U     0      0        0 eth3
+	110.1.3.0       0.0.0.0         255.255.255.0   U     0      0        0 eth4
+	110.1.4.0       0.0.0.0         255.255.255.0   U     0      0        0 eth5
+	110.1.5.0       0.0.0.0         255.255.255.0   U     0      0        0 eth6
+	110.1.6.0       0.0.0.0         255.255.255.0   U     0      0        0 eth7
+	110.1.7.0       0.0.0.0         255.255.255.0   U     0      0        0 eth8
+	110.1.8.0       0.0.0.0         255.255.255.0   U     0      0        0 eth9
+	110.1.9.0       0.0.0.0         255.255.255.0   U     0      0        0 eth10
+
+
+さらに、対向BGPルータ側に接続されたhost(30.1.0.2)に対して、疎通性を確認してみます.
+
+	# ping 30.1.0.2
+	PING 30.1.0.2 (30.1.0.2) 56(84) bytes of data.
+	64 bytes from 30.1.0.2: icmp_seq=1 ttl=64 time=1.40 ms
+	64 bytes from 30.1.0.2: icmp_seq=2 ttl=64 time=1.72 ms
+	64 bytes from 30.1.0.2: icmp_seq=3 ttl=64 time=1.40 ms
+	64 bytes from 30.1.0.2: icmp_seq=4 ttl=64 time=1.56 ms
+	64 bytes from 30.1.0.2: icmp_seq=5 ttl=64 time=1.22 ms
+	^C
+	--- 30.1.0.2 ping statistics ---
+	5 packets transmitted, 5 received, 0% packet loss, time 4011ms
+	rtt min/avg/max/mdev = 1.222/1.462/1.723/0.173 ms
+
+	# exit
+
+
+### RyuBGPでの通過パケット流量を確認
+RyuBGPが転送したパケット流量を確認します.
+以下の表示例では、上りパケット数と下りパケット数が同量であったことがわかります.
+これは、さきほどのホスト間でのping通信(ICMP Echo request/reply)がすべて成功したことを裏付ける結果となります.
+
+	$ ./get_flow_stats.sh 
+	======================================================================
+	get_flowstats
+	======================================================================
+	/openflow/0000000000000001/stats/flow
+	----------
+	reply: 'HTTP/1.1 200 OK\r\n'
+	header: Content-Type: application/json; charset=UTF-8
+	header: Content-Length: 1577
+	header: Date: Wed, 23 Sep 2015 05:15:22 GMT
+	+++++++++++++++++++++++++++++++
+	2015/09/23 05:15:22 : FlowStats
+	+++++++++++++++++++++++++++++++
+	destination(label) packets    bytes
+	------------------ ---------- ----------
+	1000                       72       7344
+	1001                        0          0
+	1002                        0          0
+
+	(...snip)
+	
+	130.1.5.0/24                0          0
+	130.1.6.0/24                0          0
+	130.1.7.0/24                0          0
+	130.1.8.0/24                0          0
+	130.1.9.0/24                0          0
+	30.1.0.2                   72       7056
+
+
+いっぽう、RyuBGPが転送したパケット流量を、port単位で確認することも可能です.
+
+	$ ./get_port_stats.sh 
+	======================================================================
+	get_portstats
+	======================================================================
+	/openflow/0000000000000001/stats/port
+	----------
+	reply: 'HTTP/1.1 200 OK\r\n'
+	header: Content-Type: application/json; charset=UTF-8
+	header: Content-Length: 1438
+	header: Date: Wed, 23 Sep 2015 05:25:11 GMT
+	+++++++++++++++++++++++++++++++
+	2015/09/23 05:25:11 : PortStats
+	+++++++++++++++++++++++++++++++
+	portNo   rxPackets rxBytes  rxErrors txPackets txBytes  txErrors
+	-------- --------- -------- -------- --------- -------- --------
+	       1       529    42178        0       887   101990        0
+	       2       749    90506        0       415    31420        0
+	       3       115     9286        0       111     9006        0
+	       4        43     2230        0        39     1950        0
+	       5        43     2230        0        39     1950        0
+	       6        42     2188        0        38     1908        0
+	       7        42     2188        0        38     1908        0
+	       8        42     2188        0        38     1908        0
+	       9        42     2188        0        38     1908        0
+	       a        42     2188        0        38     1908        0
+	       b        42     2188        0        38     1908        0
+	       c        42     2188        0        38     1908        0
 
 
 ### Dockerコンテナ停止
