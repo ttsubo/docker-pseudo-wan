@@ -476,6 +476,8 @@ if __name__ == '__main__':
 
     if len(args) == 0:
         create_tenant()
+        print "... Please wait for a while ..."
+        time.sleep(90)
     elif args[0] == 'install':
         install_docker_and_tools()
     elif args[0] == 'stop':
