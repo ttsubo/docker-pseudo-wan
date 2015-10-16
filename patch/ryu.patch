@@ -1,0 +1,13 @@
+diff --git a/ryu/services/protocols/bgp/peer.py b/ryu/services/protocols/bgp/peer.py
+index c8eae4b..e42cfb5 100644
+--- a/ryu/services/protocols/bgp/peer.py
++++ b/ryu/services/protocols/bgp/peer.py
+@@ -853,8 +853,6 @@ class Peer(Source, Sink, NeighborConfListener, Activity):
+             # By default we use BGPS's interface IP with this peer as next_hop.
+             if self.is_ebgp_peer():
+                 next_hop = self._session_next_hop(path)
+-                if path.is_local() and path.has_nexthop():
+-                    next_hop = path.nexthop
+             else:
+                 next_hop = path.nexthop
+                 # RFC 4271 allows us to change next_hop

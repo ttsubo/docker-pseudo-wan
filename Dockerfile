@@ -14,7 +14,9 @@ RUN pip install --upgrade six
 WORKDIR /root
 RUN git clone https://github.com/osrg/ryu.git
 WORKDIR /root/ryu
-RUN git checkout refs/tags/v3.24
+RUN git checkout master
+ADD patch /tmp/patch
+RUN git apply /tmp/patch/ryu.patch
 WORKDIR /root/ryu/tools
 RUN pip install -r pip-requires
 WORKDIR /root/ryu
